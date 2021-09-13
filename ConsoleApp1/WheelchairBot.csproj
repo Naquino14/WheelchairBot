@@ -6,10 +6,18 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="curl" Version="7.30.0.2" />
     <PackageReference Include="DSharpPlus" Version="4.1.0" />
     <PackageReference Include="DSharpPlus.CommandsNext" Version="4.1.0" />
     <PackageReference Include="DSharpPlus.Interactivity" Version="4.1.0" />
     <PackageReference Include="DSharpPlus.VoiceNext" Version="4.1.0" />
+    <PackageReference Include="libcurl.NET.x64" Version="1.4.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="libcurl.NET">
+      <HintPath>..\..\..\.nuget\packages\libcurl.net.x64\1.4.1\lib\net45\libcurl.NET.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>
