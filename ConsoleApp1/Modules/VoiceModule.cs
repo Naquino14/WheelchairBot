@@ -6,16 +6,13 @@ using DSharpPlus.CommandsNext;
 using DSharpPlus.CommandsNext.Attributes;
 using DSharpPlus.Entities;
 using DSharpPlus.VoiceNext;
-using System.Text.RegularExpressions;
-using SeasideResearch.LibCurlNet;
+using System.Collections.Generic;
 
 namespace WheelchairBot.Modules
 {
     public class VoiceModule : BaseCommandModule
     {
         private readonly string fart = @"sfx\fart.mp3";
-
-        int currentTrack = 1;
 
         //private readonly Regex curlReg = new Regex(@"")
         //private readonly Regex youtubeReg
@@ -31,6 +28,11 @@ namespace WheelchairBot.Modules
             path
         }
 
+        /// <summary>
+        /// arraylist of type Queues
+        /// </summary>
+        List<ServerQueue> globalQueue = new List<ServerQueue>();
+        
         #region commands
 
         [Command("ping")]
@@ -70,6 +72,8 @@ namespace WheelchairBot.Modules
             // connect
             vnc = await vnext.ConnectAsync(chn);
             await ctx.RespondAsync($"whats up fuckers, i connected to {chn.Name}");
+
+            globalQueue.Add(new ServerQueue(new List<string>(), ctx.Guild.Id, 0));
         }
 
         [Command("leave"), Description("Leaves a voice channel.")]
@@ -95,6 +99,15 @@ namespace WheelchairBot.Modules
 
             // disconnect
             vnc.Disconnect();
+            // delete queue
+            foreach (ServerQueue serverQueue in globalQueue)
+                if (serverQueue.serverId == ctx.Guild.Id)
+                {
+                    if (Directory.Exists($@"queue\{serverQueue.serverId}"))
+                        Directory.Delete($@"queue\{serverQueue.serverId}");
+                    globalQueue.Remove(serverQueue);
+                }
+
             await ctx.RespondAsync("later losers");
         }
 
@@ -125,28 +138,24 @@ namespace WheelchairBot.Modules
         }
 
         [Command("play"), Description("Plays an audio file.")]
-        public async Task Play(CommandContext ctx, [RemainingText, Description("Full path to the file to play.")] string input = null)
+        public async Task Play(CommandContext ctx, [RemainingText, Description("Full path to the file to play.")] string input = "")
         {
-            string fileName = "";
-
-            var vnext = ctx.Client.GetVoiceNext();
-            if (vnext == null)
+            if (input == "")
+            { await ctx.RespondAsync("i need something to play dumbass!"); return; }
+            int sqi = 0; // server queue index
+            foreach (ServerQueue serverQueue in globalQueue)
             {
-                await ctx.RespondAsync("epic audio join fail");
-                return;
+                if (serverQueue.serverId == ctx.Guild.Id)
+                    break;
+                sqi++;
             }
+            globalQueue[sqi].serverQueues.Add(input);
 
             var vnc = vnext.GetConnection(ctx.Guild);
             if (vnc == null)
-            {
-                await ctx.RespondAsync("bro i aint even in a vc");
-                return;
-            }
-
-            // get regex of links, if its not a link, get a file
+            { await ctx.RespondAsync("bro i aint even in a vc"); return; }
 
             LinkType type = CheckURL(input);
-            await ctx.Channel.SendMessageAsync(type.ToString());
             fileName = input.Split('/')[input.Split('/').Length - 1];
             bool vidFlag = false;
             switch (type)
@@ -154,65 +163,48 @@ namespace WheelchairBot.Modules
                 case LinkType.path:
                     ;
                     break;
-                case LinkType.curl:
-                    // get file name from link
-                    // split string at / and get the last part
-                    // add queue\ to path
-                    var curlPsi = new ProcessStartInfo
-                    {
-                        FileName = "curl.exe",
-                        Arguments = $"\"{input}\" --output \"curl\\{fileName}\"",
-                        UseShellExecute = false
-                    };
+                case LinkType.curl: // TODO: integrate with queueing
+                    var curlPsi = GenCURLPSI(input, fileName);
 
                     var curlProcess = Process.Start(curlPsi);
 
                     vidFlag = true;
                     await ctx.Channel.SendMessageAsync($"downloading file: {input}. please wait.");
                     while (vidFlag)
-                    {
-                        vidFlag = false;
+                    { vidFlag = false;
                         if (!curlProcess.HasExited)
-                            vidFlag = true;
-                    }
+                            vidFlag = true; }
+
                     break;
                 case LinkType.youtube:
-                    var ytpsi = new ProcessStartInfo
-                    {
-                        FileName = "youtube-dl.exe",
-                        Arguments = $"--output \"queue\\{currentTrack}.mp3\" --audio-format mp3 -f bestaudio \"{input}\"",
-                        UseShellExecute = false
-                    };
-
+                    await ctx.Channel.SendMessageAsync("downloading song... please wait.");
+                    var ytpsi = GenYTPSI(globalQueue[sqi].trackNumber, input);
                     var ytProcess = Process.Start(ytpsi);
 
                     vidFlag = true;
                     while (vidFlag)
-                    {
-                        vidFlag = false;
+                    { vidFlag = false;
                         if (!ytProcess.HasExited)
-                            vidFlag = true;
-                    }
+                            vidFlag = true; }
+
                     break;
             }
 
             while (vnc.IsPlaying)
                 await vnc.WaitForPlaybackFinishAsync();
 
+            // check track number
+            
+            // gian pls help
 
             Exception exc = null;
-
-            // check if file exists
-
-            // find what type of audio the file is
-
             string formatArgs = input;
             if (type == LinkType.path)
                 formatArgs = input;
             else if (type == LinkType.curl)
                 formatArgs = $@"curl\{fileName}";
             else if (type == LinkType.youtube)
-                formatArgs = $@"queue\{currentTrack}.mp3";
+                formatArgs = $@"queue\{globalQueue[sqi].trackNumber}.mp3";
 
 
             if (!File.Exists(formatArgs))
@@ -223,14 +215,8 @@ namespace WheelchairBot.Modules
             try
             {
                 await vnc.SendSpeakingAsync(true);
-                
-                var psi = new ProcessStartInfo
-                {
-                    FileName = "ffmpeg.exe",
-                    Arguments = $@"-i ""{formatArgs}"" -ac 2 -f s16le -ar 48000 pipe:1 -loglevel quiet",
-                    RedirectStandardOutput = true,
-                    UseShellExecute = false
-                };
+
+                var psi = GenFfmpegPSI(formatArgs);
                 var ffmpeg = Process.Start(psi);
                 var ffout = ffmpeg.StandardOutput.BaseStream;
 
@@ -245,6 +231,10 @@ namespace WheelchairBot.Modules
                 await vnc.SendSpeakingAsync(false);
                 if (type == LinkType.curl)
                     File.Delete(@"curl\" + fileName);
+                if (type == LinkType.youtube)
+                    File.Delete(@$"queue\{globalQueue[sqi].trackNumber}.mp3");
+
+                globalQueue[sqi].trackNumber++;
             }
 
             if (exc != null)
@@ -320,6 +310,41 @@ namespace WheelchairBot.Modules
                 await ctx.Channel.SendMessageAsync(finalMsg);
             }
         }
+
+        #region PSI Generators
+
+        private ProcessStartInfo GenYTPSI(int trNum, string inpt)
+        {
+            return new ProcessStartInfo
+            {
+                FileName = "youtube-dl.exe",
+                Arguments = $"--output \"queue\\{trNum}.mp3\" --audio-format mp3 -f bestaudio \"{inpt}\"",
+                UseShellExecute = false
+            };
+        }
+
+        private ProcessStartInfo GenCURLPSI(string input, string fileName)
+        {
+            return new ProcessStartInfo
+            {
+                FileName = "curl.exe",
+                Arguments = $"\"{input}\" --output \"queue\\{fileName}\"",
+                UseShellExecute = false
+            };
+        }
+
+        private ProcessStartInfo GenFfmpegPSI(string path)
+        {
+            return new ProcessStartInfo
+            {
+                FileName = "ffmpeg.exe",
+                Arguments = $@"-i ""{path}"" -ac 2 -f s16le -ar 48000 pipe:1 -loglevel quiet",
+                RedirectStandardOutput = true,
+                UseShellExecute = false
+            };
+        }
+
+        #endregion
 
         #endregion
     }
