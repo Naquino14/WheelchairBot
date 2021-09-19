@@ -151,6 +151,10 @@ namespace WheelchairBot.Modules
             }
             globalQueue[sqi].serverQueues.Add(input);
 
+            string fileName = "";
+            var vnext = ctx.Client.GetVoiceNext();
+            if (vnext == null)
+            { await ctx.RespondAsync("epic audio join fail"); return; }
             var vnc = vnext.GetConnection(ctx.Guild);
             if (vnc == null)
             { await ctx.RespondAsync("bro i aint even in a vc"); return; }
