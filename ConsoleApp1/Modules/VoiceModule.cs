@@ -13,7 +13,11 @@ namespace WheelchairBot.Modules
 {
     public class VoiceModule : BaseCommandModule
     {
+        private readonly Curler curler = new Curler();
+
         private readonly string fart = @"sfx\fart.mp3";
+
+        int currentTrack = 1;
 
         //private readonly Regex curlReg = new Regex(@"")
         //private readonly Regex youtubeReg
@@ -125,6 +129,8 @@ namespace WheelchairBot.Modules
         [Command("play"), Description("Plays an audio file.")]
         public async Task Play(CommandContext ctx, [RemainingText, Description("Full path to the file to play.")] string input = null)
         {
+            string fileName = "";
+
             var vnext = ctx.Client.GetVoiceNext();
             if (vnext == null)
             {
@@ -142,6 +148,9 @@ namespace WheelchairBot.Modules
             // get regex of links, if its not a link, get a file
 
             LinkType type = CheckURL(input);
+            await ctx.Channel.SendMessageAsync(type.ToString());
+            fileName = input.Split('/')[input.Split('/').Length - 1];
+            bool vidFlag = false;
             switch (type)
             {
                 case LinkType.path:
@@ -151,11 +160,41 @@ namespace WheelchairBot.Modules
                     // get file name from link
                     // split string at / and get the last part
                     // add queue\ to path
-                    string fileName = input.Split('/')[input.Split('/').Length - 1];
+                    var curlPsi = new ProcessStartInfo
+                    {
+                        FileName = "curl.exe",
+                        Arguments = $"\"{input}\" --output \"curl\\{fileName}\"",
+                        UseShellExecute = false
+                    };
 
+                    var curlProcess = Process.Start(curlPsi);
+
+                    vidFlag = true;
+                    await ctx.Channel.SendMessageAsync($"downloading file: {input}. please wait.");
+                    while (vidFlag)
+                    {
+                        vidFlag = false;
+                        if (!curlProcess.HasExited)
+                            vidFlag = true;
+                    }
                     break;
                 case LinkType.youtube:
-                    ;
+                    var ytpsi = new ProcessStartInfo
+                    {
+                        FileName = "youtube-dl.exe",
+                        Arguments = $"--output \"queue\\{currentTrack}.mp3\" --audio-format mp3 -f bestaudio \"{input}\"",
+                        UseShellExecute = false
+                    };
+
+                    var ytProcess = Process.Start(ytpsi);
+
+                    vidFlag = true;
+                    while (vidFlag)
+                    {
+                        vidFlag = false;
+                        if (!ytProcess.HasExited)
+                            vidFlag = true;
+                    }
                     break;
             }
 
@@ -164,18 +203,33 @@ namespace WheelchairBot.Modules
 
 
             Exception exc = null;
-            await ctx.Message.RespondAsync($"now playing `{input}`");
+
+            // check if file exists
+
+            // find what type of audio the file is
+
+            string formatArgs = input;
+            if (type == LinkType.path)
+                formatArgs = input;
+            else if (type == LinkType.curl)
+                formatArgs = $@"curl\{fileName}";
+            else if (type == LinkType.youtube)
+                formatArgs = $@"queue\{currentTrack}.mp3";
+
+
+            if (!File.Exists(formatArgs))
+            { await ctx.Channel.SendMessageAsync($"unable to download or locate file {formatArgs}"); return; }
+
+            await ctx.Message.RespondAsync($"now playing `{formatArgs}`");
 
             try
             {
                 await vnc.SendSpeakingAsync(true);
-
-                // find what type of audio the file is
-
+                
                 var psi = new ProcessStartInfo
                 {
                     FileName = "ffmpeg.exe",
-                    Arguments = $@"-i ""{input}"" -ac 2 -f s16le -ar 48000 pipe:1 -loglevel quiet",
+                    Arguments = $@"-i ""{formatArgs}"" -ac 2 -f s16le -ar 48000 pipe:1 -loglevel quiet",
                     RedirectStandardOutput = true,
                     UseShellExecute = false
                 };
@@ -191,6 +245,8 @@ namespace WheelchairBot.Modules
             finally
             {
                 await vnc.SendSpeakingAsync(false);
+                if (type == LinkType.curl)
+                    File.Delete(@"curl\" + fileName);
             }
 
             if (exc != null)
@@ -198,22 +254,53 @@ namespace WheelchairBot.Modules
         }
 
         [Command("fart")]
-        public async Task Fart(CommandContext ctx)
+        public async Task Fart(CommandContext ctx) => await PlaySound(
+            ctx, 
+            fart,
+            "epic fart fail!",
+            "bro you cant hear my fart if u arent in vc dumbass",
+            "i fart it"
+            );
+
+        #endregion
+
+        #region funcs
+
+        private LinkType CheckURL(string input)
+        {
+            bool containsYt = (input.Contains("yt.be", StringComparison.OrdinalIgnoreCase) || input.Contains("youtube", StringComparison.OrdinalIgnoreCase) || input.Contains("youtu.be", StringComparison.OrdinalIgnoreCase));
+            bool containsProtocol = (input.Contains(@"http://", StringComparison.OrdinalIgnoreCase) || input.Contains(@"https://", StringComparison.OrdinalIgnoreCase));
+            // check for not url
+            if (!containsYt && !containsProtocol)
+                return LinkType.path;
+
+            // check for yt
+            if (containsYt && containsProtocol)
+                return LinkType.youtube;
+
+            // ill add others later on
+
+            // in case its not any of these but is still a link, its a curl
+
+            return LinkType.curl;
+        }
+
+        private async Task PlaySound(CommandContext ctx, string path, string failMsg = "Voice next is not configured.", string ncMsg = "You are not in a voice channel.", string finalMsg = "Finished playing file")
         {
             var vnext = ctx.Client.GetVoiceNext();
             if (vnext == null)
-            { await ctx.RespondAsync("epic fart fail!"); return; }
+            { await ctx.RespondAsync(failMsg); return; }
 
             var vnc = vnext.GetConnection(ctx.Guild);
-            if (vnc == null) 
-            { await ctx.RespondAsync("bro you cant hear my fart if u arent in vc dumbass"); }
+            if (vnc == null)
+            { await ctx.RespondAsync(ncMsg); }
 
             try
             {
                 var psi = new ProcessStartInfo
                 {
                     FileName = "ffmpeg.exe",
-                    Arguments = $@"-i ""{fart}"" -ac 2 -f s16le -ar 48000 pipe:1 -loglevel quiet",
+                    Arguments = $@"-i ""{path}"" -ac 2 -f s16le -ar 48000 pipe:1 -loglevel quiet",
                     RedirectStandardOutput = true,
                     UseShellExecute = false
                 };
@@ -224,36 +311,16 @@ namespace WheelchairBot.Modules
                 await ffout.CopyToAsync(txStream);
                 await txStream.FlushAsync();
                 await vnc.WaitForPlaybackFinishAsync();
-            } catch (Exception ex)
+            }
+            catch (Exception ex)
             {
                 await ctx.Channel.SendMessageAsync(ex.ToString());
-            } finally
+            }
+            finally
             {
                 await vnc.SendSpeakingAsync(false);
-                await ctx.Channel.SendMessageAsync("i fart it");
+                await ctx.Channel.SendMessageAsync(finalMsg);
             }
-        }
-
-        #endregion
-
-        #region funcs
-
-        private LinkType CheckURL(string input)
-        {
-
-            // check for not url
-            if (Uri.IsWellFormedUriString(input, UriKind.RelativeOrAbsolute))
-                return LinkType.path;
-
-            // check for yt
-            if (input.Contains("yt.be", StringComparison.OrdinalIgnoreCase) || input.Contains("youtube", StringComparison.OrdinalIgnoreCase))
-                return LinkType.youtube;
-
-            // ill add others later on
-
-            // in case its not any of these but is still a link, its a curl
-
-            return LinkType.curl;
         }
 
         #endregion
