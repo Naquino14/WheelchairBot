@@ -13,8 +13,6 @@ namespace WheelchairBot.Modules
 {
     public class VoiceModule : BaseCommandModule
     {
-        private readonly Curler curler = new Curler();
-
         private readonly string fart = @"sfx\fart.mp3";
 
         int currentTrack = 1;
