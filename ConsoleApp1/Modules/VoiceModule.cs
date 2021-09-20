@@ -7,6 +7,7 @@ using DSharpPlus.CommandsNext.Attributes;
 using DSharpPlus.Entities;
 using DSharpPlus.VoiceNext;
 using System.Collections.Generic;
+using Google.Apis.YouTube.v3;
 
 namespace WheelchairBot.Modules
 {
