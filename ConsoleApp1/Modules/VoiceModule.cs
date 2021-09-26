@@ -74,13 +74,16 @@ namespace WheelchairBot.Modules
             vnc = await vnext.ConnectAsync(chn);
             await ctx.RespondAsync($"whats up fuckers, i connected to {chn.Name}");
 
-            globalQueue.Add(new ServerQueue(new List<string>(), ctx.Guild.Id, 0));
+            globalQueue.Add(new ServerQueue(new List<string>(), ctx.Guild.Id, 0, 0, null));
+
+            foreach (ServerQueue serverQueue in globalQueue)
+                if (Directory.Exists($@"queue\{serverQueue.serverId}"))
+                    Directory.CreateDirectory($@"queue\{serverQueue.serverId}");
         }
 
         [Command("leave"), Description("Leaves a voice channel.")]
-        public async Task Leave(CommandContext ctx)
+        public async Task Leave(CommandContext ctx, bool fuckoff = false)
         {
-            // check whether VNext is enabled
             var vnext = ctx.Client.GetVoiceNext();
             if (vnext == null)
             {
@@ -97,46 +100,37 @@ namespace WheelchairBot.Modules
                 await ctx.RespondAsync("idiot! im not connected to anything");
                 return;
             }
-
             // disconnect
-            vnc.Disconnect();
-            // delete queue
+            vnc.Disconnect(); // anything past this wont fire
+            // get sqi
+            int sqi = 0;
             foreach (ServerQueue serverQueue in globalQueue)
-                if (serverQueue.serverId == ctx.Guild.Id)
-                {
-                    if (Directory.Exists($@"queue\{serverQueue.serverId}"))
-                        Directory.Delete($@"queue\{serverQueue.serverId}");
-                    globalQueue.Remove(serverQueue);
-                }
+            {
+                if (serverQueue.serverId == ctx.Channel.Id)
+                    break;
+                sqi++;
+            }
+            // close ffmpeg
+            globalQueue[sqi].ffmpegProcess.Close();
+            // delete queue
+            if (Directory.Exists($@"queue\{globalQueue[sqi].serverId}"))
+                Directory.Delete($@"queue\{globalQueue[sqi].serverId}");
+            globalQueue.Remove(globalQueue[sqi]);
 
-            await ctx.RespondAsync("later losers");
+            switch (fuckoff)
+            {
+                case true:
+                    await ctx.RespondAsync("alright chill ill leave");
+                    await ctx.Channel.SendMessageAsync("https://tenor.com/view/joeswanson-stand-walk-family-guy-gif-17739079");
+                    break;
+                case false:
+                    await ctx.RespondAsync("later losers");
+                    break;
+            }
         }
 
         [Command("fuckoff"), Description("Leaves a voice channel.")]
-        public async Task FuckOff(CommandContext ctx)
-        {
-            // check whether VNext is enabled
-            var vnext = ctx.Client.GetVoiceNext();
-            if (vnext == null)
-            {
-                // not enabled
-                await ctx.RespondAsync("epic leave channel fail");
-                return;
-            }
-
-            // check whether we are connected
-            var vnc = vnext.GetConnection(ctx.Guild);
-            if (vnc == null)
-            {
-                // not connected
-                await ctx.RespondAsync("idiot! im not connected to anything");
-                return;
-            }
-
-            // disconnect
-            vnc.Disconnect();
-            await ctx.RespondAsync("alright chill ill leave");
-        }
+        public async Task FuckOff(CommandContext ctx) => await Leave(ctx, true);
 
         [Command("play"), Description("Plays an audio file.")]
         public async Task Play(CommandContext ctx, [RemainingText, Description("Full path to the file to play.")] string input = "")
@@ -158,7 +152,7 @@ namespace WheelchairBot.Modules
             { await ctx.RespondAsync("epic audio join fail"); return; }
             var vnc = vnext.GetConnection(ctx.Guild);
             if (vnc == null)
-            { await ctx.RespondAsync("bro i aint even in a vc"); return; }
+            { await Join(ctx, ctx.Channel); }
 
             LinkType type = CheckURL(input);
             fileName = input.Split('/')[input.Split('/').Length - 1];
@@ -183,7 +177,7 @@ namespace WheelchairBot.Modules
                     break;
                 case LinkType.youtube:
                     await ctx.Channel.SendMessageAsync("downloading song... please wait.");
-                    var ytpsi = GenYTPSI(globalQueue[sqi].trackNumber, input);
+                    var ytpsi = GenYTPSI(globalQueue[sqi].trackNumber, input, ctx.Guild.Id);
                     var ytProcess = Process.Start(ytpsi);
 
                     vidFlag = true;
@@ -199,8 +193,6 @@ namespace WheelchairBot.Modules
                 await vnc.WaitForPlaybackFinishAsync();
 
             // check track number
-            
-            // gian pls help
 
             Exception exc = null;
             string formatArgs = input;
@@ -209,7 +201,7 @@ namespace WheelchairBot.Modules
             else if (type == LinkType.curl)
                 formatArgs = $@"curl\{fileName}";
             else if (type == LinkType.youtube)
-                formatArgs = $@"queue\{globalQueue[sqi].trackNumber}.mp3";
+                formatArgs = $@"queue\{globalQueue[sqi].serverId}\{globalQueue[sqi].trackNumber}.mp3";
 
 
             if (!File.Exists(formatArgs))
@@ -222,8 +214,8 @@ namespace WheelchairBot.Modules
                 await vnc.SendSpeakingAsync(true);
 
                 var psi = GenFfmpegPSI(formatArgs);
-                var ffmpeg = Process.Start(psi);
-                var ffout = ffmpeg.StandardOutput.BaseStream;
+                globalQueue[sqi].ffmpegProcess = Process.Start(psi);
+                var ffout = globalQueue[sqi].ffmpegProcess.StandardOutput.BaseStream;
 
                 var txStream = vnc.GetTransmitSink();
                 await ffout.CopyToAsync(txStream);
@@ -237,7 +229,7 @@ namespace WheelchairBot.Modules
                 if (type == LinkType.curl)
                     File.Delete(@"curl\" + fileName);
                 if (type == LinkType.youtube)
-                    File.Delete(@$"queue\{globalQueue[sqi].trackNumber}.mp3");
+                    File.Delete(@$"queue\{globalQueue[sqi].serverId}\{globalQueue[sqi].trackNumber}.mp3");
 
                 globalQueue[sqi].trackNumber++;
             }
@@ -318,14 +310,20 @@ namespace WheelchairBot.Modules
 
         #region PSI Generators
 
-        private ProcessStartInfo GenYTPSI(int trNum, string inpt)
+        private ProcessStartInfo GenYTPSI(int trNum, string inpt, ulong guId, bool playlist = false)
         {
-            return new ProcessStartInfo
+            switch (playlist)
             {
-                FileName = "youtube-dl.exe",
-                Arguments = $"--output \"queue\\{trNum}.mp3\" --audio-format mp3 -f bestaudio \"{inpt}\"",
-                UseShellExecute = false
-            };
+                case false:
+                    return new ProcessStartInfo
+                    {
+                        FileName = "youtube-dl.exe",
+                        Arguments = $"--output \"queue\\{guId}\\{trNum}.mp3\" --audio-format mp3 -f bestaudio \"{inpt}\"",
+                        UseShellExecute = false
+                    };
+                case true:
+                    throw new NotImplementedException();
+            }
         }
 
         private ProcessStartInfo GenCURLPSI(string input, string fileName)
