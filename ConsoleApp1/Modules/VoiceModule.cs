@@ -77,8 +77,9 @@ namespace WheelchairBot.Modules
             globalQueue.Add(new ServerQueue(new List<string>(), ctx.Guild.Id, 0, 0, null));
 
             foreach (ServerQueue serverQueue in globalQueue)
-                if (Directory.Exists($@"queue\{serverQueue.serverId}"))
-                    Directory.CreateDirectory($@"queue\{serverQueue.serverId}");
+                if (serverQueue.serverId == ctx.Guild.Id)
+                    if (Directory.Exists($@"queue\{serverQueue.serverId}"))
+                        Directory.CreateDirectory($@"queue\{serverQueue.serverId}");
         }
 
         [Command("leave"), Description("Leaves a voice channel.")]
