@@ -18,6 +18,7 @@ namespace WheelchairBot
         public CommandsNextExtension commands { get; private set; }
         public VoiceNextExtension voice { get; set; }
         public static bool isDev = false;
+        public static string APIKey;
         public async Task RunAsync(Base.RunMode mode)
         {
             var json = string.Empty;
@@ -28,12 +29,14 @@ namespace WheelchairBot
 
             var configJson = JsonConvert.DeserializeObject<Configuration>(json);
 
+            Bot.APIKey = configJson.APIKey;
+
             var config = new DiscordConfiguration
             {
                 Token = configJson.Token,
                 TokenType = TokenType.Bot,
                 AutoReconnect = true,
-                MinimumLogLevel = Microsoft.Extensions.Logging.LogLevel.Debug,
+                MinimumLogLevel = Microsoft.Extensions.Logging.LogLevel.Debug
             };
 
             client = new DiscordClient(config);

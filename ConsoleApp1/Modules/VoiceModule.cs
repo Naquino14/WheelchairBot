@@ -13,6 +13,12 @@ namespace WheelchairBot.Modules
 {
     public class VoiceModule : BaseCommandModule
     {
+        public string APIKey;
+        public VoiceModule()
+        {
+            APIKey = Bot.APIKey;
+        }
+
         private readonly string fart = @"sfx\fart.mp3";
 
         //private readonly Regex curlReg = new Regex(@"")
@@ -26,13 +32,16 @@ namespace WheelchairBot.Modules
             youtube,
             spotify,
             soundcloud,
-            path
+            path,
+            search
         }
 
         /// <summary>
         /// arraylist of type Queues
         /// </summary>
         List<ServerQueue> globalQueue = new List<ServerQueue>();
+
+        YoutubeSearch youtubeSearch;
         
         #region commands
 
@@ -78,7 +87,7 @@ namespace WheelchairBot.Modules
 
             foreach (ServerQueue serverQueue in globalQueue)
                 if (serverQueue.serverId == ctx.Guild.Id)
-                    if (Directory.Exists($@"queue\{serverQueue.serverId}"))
+                    if (!Directory.Exists($@"queue\{serverQueue.serverId}"))
                         Directory.CreateDirectory($@"queue\{serverQueue.serverId}");
         }
 
@@ -102,21 +111,33 @@ namespace WheelchairBot.Modules
                 return;
             }
             // disconnect
-            vnc.Disconnect(); // anything past this wont fire
-            // get sqi
+            vnc.Disconnect();
+            // get server queue index
             int sqi = 0;
+            
             foreach (ServerQueue serverQueue in globalQueue)
             {
                 if (serverQueue.serverId == ctx.Channel.Id)
                     break;
                 sqi++;
             }
+            sqi--;
+
             // close ffmpeg
-            globalQueue[sqi].ffmpegProcess.Close();
+            if(globalQueue[sqi].ffmpegProcess != null && !globalQueue[sqi].ffmpegProcess.HasExited)
+                globalQueue[sqi].ffmpegProcess.Close();
+
             // delete queue
-            if (Directory.Exists($@"queue\{globalQueue[sqi].serverId}"))
-                Directory.Delete($@"queue\{globalQueue[sqi].serverId}");
+            Console.WriteLine("Attempting shutdown.. it's not, it's not shutting down!");
+
+            //it can't delete the directory, so it just stops here. why?
+            if (Directory.Exists($@"{Directory.GetCurrentDirectory()}\queue\{globalQueue[sqi].serverId}")) 
+                Directory.Delete($@"{Directory.GetCurrentDirectory()}\queue\{globalQueue[sqi].serverId}");
+
+            Console.WriteLine("Deleted directory succesfully");
             globalQueue.Remove(globalQueue[sqi]);
+
+            Console.WriteLine("Gordon freeman in the flesh...");
 
             switch (fuckoff)
             {
@@ -183,9 +204,11 @@ namespace WheelchairBot.Modules
 
                     vidFlag = true;
                     while (vidFlag)
-                    { vidFlag = false;
+                    { 
+                        vidFlag = false;
                         if (!ytProcess.HasExited)
-                            vidFlag = true; }
+                            vidFlag = true; 
+                    }
 
                     break;
             }
@@ -267,8 +290,11 @@ namespace WheelchairBot.Modules
             // ill add others later on
 
             // in case its not any of these but is still a link, its a curl
+            
+            if (containsProtocol)
+                return LinkType.curl;
 
-            return LinkType.curl;
+            return LinkType.search;
         }
 
         private async Task PlaySound(CommandContext ctx, string path, string failMsg = "Voice next is not configured.", string ncMsg = "You are not in a voice channel.", string finalMsg = "Finished playing file")
@@ -309,6 +335,28 @@ namespace WheelchairBot.Modules
             }
         }
 
+        [Command("trysearch")]
+        private async Task TrySearch(CommandContext ctx, [RemainingText, Description("Full path to the file to play.")] string input = "")
+        {
+            try
+            {
+                await ctx.RespondAsync("Ighty i gothu homie, searching...");
+                youtubeSearch = new YoutubeSearch(APIKey);
+                await youtubeSearch.Search(input);
+                await ctx.Channel.SendMessageAsync($"count: {youtubeSearch.videos.Count}");
+                string finalResponse = string.Empty;
+                for (int i = 0; i <= youtubeSearch.videos.Count; i++)
+                    finalResponse = finalResponse + $"Video {i + 1}: {youtubeSearch.videos[i]}\n";
+                Console.WriteLine($"fr is :{finalResponse}");
+                await ctx.Channel.SendMessageAsync(finalResponse == string.Empty ? "t" : "f");
+                Console.WriteLine("done");
+            } catch (AggregateException ex)
+            {
+                foreach (var e in ex.InnerExceptions)
+                    Console.WriteLine($"nipples: {e}");
+            }
+        }
+
         #region PSI Generators
 
         private ProcessStartInfo GenYTPSI(int trNum, string inpt, ulong guId, bool playlist = false)
@@ -318,7 +366,7 @@ namespace WheelchairBot.Modules
                 case false:
                     return new ProcessStartInfo
                     {
-                        FileName = "youtube-dl.exe",
+                        FileName = "yt-dlp.exe",
                         Arguments = $"--output \"queue\\{guId}\\{trNum}.mp3\" --audio-format mp3 -f bestaudio \"{inpt}\"",
                         UseShellExecute = false
                     };
