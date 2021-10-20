@@ -13,6 +13,7 @@ namespace WheelchairBot.Modules
         public YoutubeSearch(string APIKey) => this.APIkey = APIKey;
 
         public List<string> videos { get; private set; }
+        public List<string> videoIds { get; private set;}
 
         public async Task Search(string searchTerm)
         {
@@ -31,10 +32,11 @@ namespace WheelchairBot.Modules
                 var searchListResponse = await searchListRequest.ExecuteAsync();
 
                 videos = new List<string>();
+                videoIds = new List<string>();
 
                 foreach (var searchResult in searchListResponse.Items)
                     if (searchResult.Id.Kind == "youtube#video")
-                    { videos.Add(string.Format("{0} ({1})", searchResult.Snippet.Title, searchResult.Id.VideoId)); }
+                    { videos.Add(searchResult.Snippet.Title); videoIds.Add(searchResult.Id.VideoId); }
             } catch (Exception ex)
             {
                 Console.WriteLine(ex.ToString());

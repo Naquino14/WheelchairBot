@@ -209,7 +209,20 @@ namespace WheelchairBot.Modules
                         if (!ytProcess.HasExited)
                             vidFlag = true; 
                     }
+                    break;
+                case LinkType.search:
+                    youtubeSearch ??= new YoutubeSearch(APIKey);
+                    await youtubeSearch.Search(input);
+                    var ytSearchPsi = GenYTPSI(globalQueue[sqi].trackNumber, $"https://www.youtube.com/watch?v={youtubeSearch.videoIds[0]}", ctx.Guild.Id);
+                    var ytSearchProcess = Process.Start(ytSearchPsi);
 
+                    vidFlag = true;
+                    while (vidFlag)
+                    { 
+                        vidFlag = false;
+                        if (!ytSearchProcess.HasExited)
+                            vidFlag = true;
+                    }
                     break;
             }
 
@@ -225,6 +238,8 @@ namespace WheelchairBot.Modules
             else if (type == LinkType.curl)
                 formatArgs = $@"curl\{fileName}";
             else if (type == LinkType.youtube)
+                formatArgs = $@"queue\{globalQueue[sqi].serverId}\{globalQueue[sqi].trackNumber}.mp3";
+            else if (type == LinkType.search)
                 formatArgs = $@"queue\{globalQueue[sqi].serverId}\{globalQueue[sqi].trackNumber}.mp3";
 
 
@@ -252,7 +267,7 @@ namespace WheelchairBot.Modules
                 await vnc.SendSpeakingAsync(false);
                 if (type == LinkType.curl)
                     File.Delete(@"curl\" + fileName);
-                if (type == LinkType.youtube)
+                if (type == LinkType.youtube || type == LinkType.search)
                     File.Delete(@$"queue\{globalQueue[sqi].serverId}\{globalQueue[sqi].trackNumber}.mp3");
 
                 globalQueue[sqi].trackNumber++;
@@ -280,8 +295,8 @@ namespace WheelchairBot.Modules
             bool containsYt = (input.Contains("yt.be", StringComparison.OrdinalIgnoreCase) || input.Contains("youtube", StringComparison.OrdinalIgnoreCase) || input.Contains("youtu.be", StringComparison.OrdinalIgnoreCase));
             bool containsProtocol = (input.Contains(@"http://", StringComparison.OrdinalIgnoreCase) || input.Contains(@"https://", StringComparison.OrdinalIgnoreCase));
             // check for not url
-            if (!containsYt && !containsProtocol)
-                return LinkType.path;
+            //if (!containsYt && !containsProtocol)
+                //return LinkType.path;
 
             // check for yt
             if (containsYt && containsProtocol)
@@ -335,27 +350,27 @@ namespace WheelchairBot.Modules
             }
         }
 
-        [Command("trysearch")]
-        private async Task TrySearch(CommandContext ctx, [RemainingText, Description("Full path to the file to play.")] string input = "")
-        {
-            try
-            {
-                await ctx.RespondAsync("Ighty i gothu homie, searching...");
-                youtubeSearch = new YoutubeSearch(APIKey);
-                await youtubeSearch.Search(input);
-                await ctx.Channel.SendMessageAsync($"count: {youtubeSearch.videos.Count}");
-                string finalResponse = string.Empty;
-                for (int i = 0; i <= youtubeSearch.videos.Count; i++)
-                    finalResponse = finalResponse + $"Video {i + 1}: {youtubeSearch.videos[i]}\n";
-                Console.WriteLine($"fr is :{finalResponse}");
-                await ctx.Channel.SendMessageAsync(finalResponse == string.Empty ? "t" : "f");
-                Console.WriteLine("done");
-            } catch (AggregateException ex)
-            {
-                foreach (var e in ex.InnerExceptions)
-                    Console.WriteLine($"nipples: {e}");
-            }
-        }
+        //[Command("trysearch")]
+        //private async Task TrySearch(CommandContext ctx, [RemainingText, Description("Full path to the file to play.")] string input = "")
+        //{
+        //    try
+        //    {
+        //        await ctx.RespondAsync("Ighty i gothu homie, searching...");
+        //        youtubeSearch = new YoutubeSearch(APIKey);
+        //        await youtubeSearch.Search(input);
+        //        await ctx.Channel.SendMessageAsync($"count: {youtubeSearch.videos.Count}");
+        //        string finalResponse = string.Empty;
+        //        for (int i = 0; i <= youtubeSearch.videos.Count; i++)
+        //            finalResponse = finalResponse + $"Video {i + 1}: {youtubeSearch.videos[i]}\n";
+        //        Console.WriteLine($"fr is :{finalResponse}");
+        //        await ctx.Channel.SendMessageAsync(finalResponse == string.Empty ? "t" : "f");
+        //        Console.WriteLine("done");
+        //    } catch (AggregateException ex)
+        //    {
+        //        foreach (var e in ex.InnerExceptions)
+        //            Console.WriteLine($"nipples: {e}");
+        //    }
+        //}
 
         #region PSI Generators
 
